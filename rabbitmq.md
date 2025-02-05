@@ -191,4 +191,506 @@ await channel.prefetch(1);
 2. **Live Chat System** (Real-time message streaming)
 3. **Microservices Event Bus** (Decouple services with RabbitMQ)
 
-Would you like **Docker + RabbitMQ** deployment next? 🚢🔥
+Let's build an **Email Notification System** using **Node.js, RabbitMQ, and Docker**. This system will have:  
+
+✅ **Producer (Order Service)** → Sends an order confirmation request.  
+✅ **RabbitMQ (Message Broker)** → Routes the message.  
+✅ **Consumer (Email Service)** → Listens and sends an email.  
+✅ **Docker** → Runs RabbitMQ and our services in containers.  
+
+---
+
+# **📌 Step 1: Setup Docker with RabbitMQ**
+Create a **`docker-compose.yml`** file to run RabbitMQ.
+
+```yaml
+version: '3.8'
+services:
+  rabbitmq:
+    image: rabbitmq:management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+```
+📌 **Run RabbitMQ**  
+```sh
+docker-compose up -d
+```
+✅ **RabbitMQ Management UI:** http://localhost:15672 (User: `guest`, Password: `guest`).
+
+---
+
+# **📌 Step 2: Create Order Service (Producer)**
+📌 **Install dependencies**
+```sh
+mkdir order-service && cd order-service
+npm init -y
+npm install amqplib express nodemon
+```
+
+📌 **Create `orderService.js`**
+```javascript
+const express = require('express');
+const amqp = require('amqplib');
+
+const app = express();
+app.use(express.json());
+
+const RABBITMQ_URL = 'amqp://localhost';
+
+async function sendToQueue(orderData) {
+  const connection = await amqp.connect(RABBITMQ_URL);
+  const channel = await connection.createChannel();
+  const queue = 'order_queue';
+
+  await channel.assertQueue(queue, { durable: true });
+  channel.sendToQueue(queue, Buffer.from(JSON.stringify(orderData)), { persistent: true });
+
+  console.log(`✅ Order sent to queue:`, orderData);
+  setTimeout(() => connection.close(), 500);
+}
+
+app.post('/order', async (req, res) => {
+  const order = req.body;
+  await sendToQueue(order);
+  res.json({ message: 'Order placed successfully!', order });
+});
+
+app.listen(3000, () => console.log('📦 Order Service running on port 3000'));
+```
+
+📌 **Run Order Service**
+```sh
+node orderService.js
+```
+✅ **API Endpoint:** `POST http://localhost:3000/order`  
+Sample JSON:  
+```json
+{
+  "orderId": "12345",
+  "email": "customer@example.com",
+  "product": "Laptop"
+}
+```
+
+---
+
+# **📌 Step 3: Create Email Service (Consumer)**
+📌 **Install dependencies**
+```sh
+mkdir email-service && cd email-service
+npm init -y
+npm install amqplib nodemailer nodemon
+```
+
+📌 **Create `emailService.js`**
+```javascript
+const amqp = require('amqplib');
+const nodemailer = require('nodemailer');
+
+const RABBITMQ_URL = 'amqp://localhost';
+
+async function receiveFromQueue() {
+  const connection = await amqp.connect(RABBITMQ_URL);
+  const channel = await connection.createChannel();
+  const queue = 'order_queue';
+
+  await channel.assertQueue(queue, { durable: true });
+  console.log(`📨 Waiting for orders...`);
+
+  channel.consume(queue, async (msg) => {
+    if (msg !== null) {
+      const orderData = JSON.parse(msg.content.toString());
+      console.log(`📧 Sending email for order:`, orderData);
+
+      await sendEmail(orderData);
+      channel.ack(msg);
+    }
+  });
+}
+
+async function sendEmail(order) {
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: 'your-email@gmail.com', pass: 'your-password' },
+  });
+
+  const mailOptions = {
+    from: 'your-email@gmail.com',
+    to: order.email,
+    subject: 'Order Confirmation',
+    text: `Your order for ${order.product} (ID: ${order.orderId}) has been received.`,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ Email sent to ${order.email}`);
+  } catch (error) {
+    console.error('❌ Email sending failed:', error);
+  }
+}
+
+receiveFromQueue();
+```
+📌 **Run Email Service**
+```sh
+node emailService.js
+```
+✅ **The email service listens for new orders and sends confirmation emails.**  
+
+---
+
+# **📌 Step 4: Dockerize Services**
+## **1️⃣ Dockerfile for Order Service**
+📌 **Create `order-service/Dockerfile`**
+```dockerfile
+FROM node:18
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm install
+COPY . .
+CMD ["node", "orderService.js"]
+```
+
+## **2️⃣ Dockerfile for Email Service**
+📌 **Create `email-service/Dockerfile`**
+```dockerfile
+FROM node:18
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm install
+COPY . .
+CMD ["node", "emailService.js"]
+```
+
+## **3️⃣ Update `docker-compose.yml`**
+Modify `docker-compose.yml` to include both services:
+```yaml
+version: '3.8'
+services:
+  rabbitmq:
+    image: rabbitmq:management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  order-service:
+    build: ./order-service
+    container_name: order-service
+    ports:
+      - "3000:3000"
+    depends_on:
+      - rabbitmq
+
+  email-service:
+    build: ./email-service
+    container_name: email-service
+    depends_on:
+      - rabbitmq
+```
+
+📌 **Run Everything**
+```sh
+docker-compose up --build
+```
+✅ **Order API:** `POST http://localhost:3000/order`  
+✅ **RabbitMQ UI:** http://localhost:15672  
+✅ **Emails will be sent automatically!**
+
+---
+
+# **📌 Summary**
+🚀 We built a **RabbitMQ-based Email Notification System** with **Docker**:
+1️⃣ **Order Service (Producer):** Sends order confirmation messages.  
+2️⃣ **RabbitMQ (Message Broker):** Handles message routing.  
+3️⃣ **Email Service (Consumer):** Listens and sends emails.  
+4️⃣ **Docker:** Runs everything in isolated containers.  
+
+Would you like **load balancing for multiple consumers** next? 🔥
+
+## **🔥 Load Balancing Consumers in RabbitMQ**
+To scale our **Email Service**, we need multiple consumers processing messages in parallel. **RabbitMQ automatically distributes messages to consumers** using the **round-robin dispatching** mechanism.
+
+---
+
+# **📌 Step 1: Modify Email Service for Multiple Consumers**
+We need **multiple instances** of our **email-service** running in separate containers.
+
+📌 **Update `emailService.js`**
+```javascript
+const amqp = require('amqplib');
+const nodemailer = require('nodemailer');
+
+const RABBITMQ_URL = 'amqp://rabbitmq'; // Use service name in Docker
+
+async function receiveFromQueue() {
+  const connection = await amqp.connect(RABBITMQ_URL);
+  const channel = await connection.createChannel();
+  const queue = 'order_queue';
+
+  await channel.assertQueue(queue, { durable: true });
+  channel.prefetch(1); // Ensures one consumer gets one message at a time
+
+  console.log(`📨 Consumer started - Waiting for orders...`);
+
+  channel.consume(queue, async (msg) => {
+    if (msg !== null) {
+      const orderData = JSON.parse(msg.content.toString());
+      console.log(`📧 Consumer ${process.pid} handling order:`, orderData);
+
+      await sendEmail(orderData);
+      channel.ack(msg);
+    }
+  });
+}
+
+async function sendEmail(order) {
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: 'your-email@gmail.com', pass: 'your-password' },
+  });
+
+  const mailOptions = {
+    from: 'your-email@gmail.com',
+    to: order.email,
+    subject: 'Order Confirmation',
+    text: `Your order for ${order.product} (ID: ${order.orderId}) has been received.`,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ Email sent to ${order.email}`);
+  } catch (error) {
+    console.error('❌ Email sending failed:', error);
+  }
+}
+
+receiveFromQueue();
+```
+
+---
+
+# **📌 Step 2: Update `docker-compose.yml`**
+📌 **Modify `docker-compose.yml` to scale consumers**
+```yaml
+version: '3.8'
+services:
+  rabbitmq:
+    image: rabbitmq:management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  order-service:
+    build: ./order-service
+    container_name: order-service
+    ports:
+      - "3000:3000"
+    depends_on:
+      - rabbitmq
+
+  email-service:
+    build: ./email-service
+    deploy:
+      replicas: 3  # Scale to 3 instances
+    depends_on:
+      - rabbitmq
+```
+✅ This ensures **RabbitMQ will distribute messages across multiple consumers!** 🎯
+
+---
+
+# **📌 Step 3: Run Everything with Multiple Consumers**
+📌 **Run with Docker Compose**
+```sh
+docker-compose up --build
+```
+✅ **RabbitMQ will distribute orders evenly across 3 email-service instances.**  
+
+---
+
+# **📌 Step 4: Verify Load Balancing**
+1️⃣ Open RabbitMQ UI at **http://localhost:15672** (User: `guest`, Password: `guest`).  
+2️⃣ Go to **Queues → `order_queue`**, and check the message distribution.  
+3️⃣ Send multiple orders using:  
+```sh
+curl -X POST http://localhost:3000/order -H "Content-Type: application/json" -d '{"orderId":"12345", "email":"user1@example.com", "product":"Laptop"}'
+curl -X POST http://localhost:3000/order -H "Content-Type: application/json" -d '{"orderId":"12346", "email":"user2@example.com", "product":"Phone"}'
+curl -X POST http://localhost:3000/order -H "Content-Type: application/json" -d '{"orderId":"12347", "email":"user3@example.com", "product":"Tablet"}'
+```
+✅ The messages will be processed **evenly** by different consumers.  
+
+---
+
+# **📌 Summary**
+🚀 We **scaled our consumers** for high performance using RabbitMQ’s **round-robin dispatching**:
+- **Multiple Consumers** in `email-service`
+- **RabbitMQ load balancing**
+- **Scaling with Docker `deploy.replicas`**
+  
+Would you like to add **Retry Logic** for failed emails next? 📩🔥
+
+# **🔥 Adding Retry Logic for Failed Emails in RabbitMQ**
+To make our **email notification system** more **robust**, we'll add **retry logic** when an email fails. Instead of losing failed messages, we'll:
+1. **Move them to a "retry queue"** with a delay before reprocessing.
+2. **If retries exceed the limit, move them to a "dead-letter queue" (DLQ)** for logging and analysis.
+
+---
+
+# **📌 Step 1: Define the Retry & Dead Letter Queues**
+Modify **email-service** to include:
+- A **retry queue** (`email_retry_queue`) where failed emails go, with a **TTL (time-to-live)** before retrying.
+- A **dead-letter queue (DLQ)** (`email_dead_letter_queue`) for emails that fail multiple times.
+
+📌 **Modify `emailService.js`**
+```javascript
+const amqp = require('amqplib');
+const nodemailer = require('nodemailer');
+
+const RABBITMQ_URL = 'amqp://rabbitmq'; 
+const QUEUE_NAME = 'order_queue';
+const RETRY_QUEUE = 'email_retry_queue';
+const DLQ = 'email_dead_letter_queue';
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 5000; // 5 seconds delay before retrying
+
+async function receiveFromQueue() {
+  const connection = await amqp.connect(RABBITMQ_URL);
+  const channel = await connection.createChannel();
+
+  // Declare queues
+  await channel.assertQueue(QUEUE_NAME, { durable: true });
+  await channel.assertQueue(RETRY_QUEUE, {
+    durable: true,
+    arguments: {
+      'x-dead-letter-exchange': '', // Sends to main queue after delay
+      'x-dead-letter-routing-key': QUEUE_NAME,
+      'x-message-ttl': RETRY_DELAY_MS, // Retry delay
+    },
+  });
+  await channel.assertQueue(DLQ, { durable: true });
+
+  channel.prefetch(1); // Ensures fair load balancing
+
+  console.log(`📨 Consumer started - Waiting for orders...`);
+
+  channel.consume(QUEUE_NAME, async (msg) => {
+    if (msg) {
+      const orderData = JSON.parse(msg.content.toString());
+      const retryCount = msg.properties.headers['x-retry-count'] || 0;
+
+      try {
+        console.log(`📧 Processing email for: ${orderData.email}`);
+        await sendEmail(orderData);
+        channel.ack(msg);
+      } catch (error) {
+        console.error(`❌ Failed to send email to ${orderData.email}. Attempt: ${retryCount + 1}`);
+
+        if (retryCount >= MAX_RETRIES) {
+          console.log(`🚨 Moving message to Dead Letter Queue`);
+          channel.sendToQueue(DLQ, msg.content, { persistent: true });
+        } else {
+          console.log(`🔄 Retrying in ${RETRY_DELAY_MS / 1000}s...`);
+          channel.sendToQueue(RETRY_QUEUE, msg.content, {
+            headers: { 'x-retry-count': retryCount + 1 },
+            persistent: true,
+          });
+        }
+        channel.ack(msg);
+      }
+    }
+  });
+}
+
+async function sendEmail(order) {
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: 'your-email@gmail.com', pass: 'your-password' },
+  });
+
+  const mailOptions = {
+    from: 'your-email@gmail.com',
+    to: order.email,
+    subject: 'Order Confirmation',
+    text: `Your order for ${order.product} (ID: ${order.orderId}) has been received.`,
+  };
+
+  await transporter.sendMail(mailOptions);
+  console.log(`✅ Email sent to ${order.email}`);
+}
+
+receiveFromQueue();
+```
+
+---
+
+# **📌 Step 2: Update `docker-compose.yml`**
+📌 **Ensure RabbitMQ handles dead-letter messages properly**
+```yaml
+version: '3.8'
+services:
+  rabbitmq:
+    image: rabbitmq:management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  order-service:
+    build: ./order-service
+    container_name: order-service
+    ports:
+      - "3000:3000"
+    depends_on:
+      - rabbitmq
+
+  email-service:
+    build: ./email-service
+    deploy:
+      replicas: 3  # Scale consumers for load balancing
+    depends_on:
+      - rabbitmq
+```
+
+---
+
+# **📌 Step 3: Run & Test the System**
+🚀 **Run everything**:
+```sh
+docker-compose up --build
+```
+
+🛠 **Test with Failed Emails**
+1. **Send a valid request:**
+```sh
+curl -X POST http://localhost:3000/order -H "Content-Type: application/json" -d '{"orderId":"12345", "email":"valid@example.com", "product":"Laptop"}'
+```
+✅ The email should send successfully.
+
+2. **Force a failure (change `nodemailer` password or disconnect network).**  
+The message will retry **3 times** and move to the **Dead Letter Queue**.
+
+3. **Monitor Queues in RabbitMQ Dashboard**  
+Go to **http://localhost:15672** → **Queues**  
+Check:
+- `order_queue`: Main queue
+- `email_retry_queue`: Retries before moving back to main queue
+- `email_dead_letter_queue`: Failed emails after max retries
+
+---
+
+# **📌 Summary**
+✅ Implemented **retry logic** for failed emails  
+✅ **Retries up to 3 times** before moving to **DLQ**  
+✅ **Used RabbitMQ TTL & Dead Letter Exchange**  
+✅ **Scaled consumers for load balancing**  
+
+Would you like to **automatically process DLQ messages** for later retries? 🚀
+
+ automatically process DLQ messages for later retrie
