@@ -60,3 +60,82 @@ public ResponseEntity<?> uploadVideo(@RequestParam("file") MultipartFile file) t
 | **Processing** | FFmpeg (for compression, analytics) |
 
 Would you like a **Spring Boot example** for integrating **video storage & retrieval**? 🚀
+
+
+Since you're using **MySQL for the local database** and **Timescale Cloud for the cloud database**, here's the best approach:  
+
+---
+
+### **How to Store Data in MySQL (Local DB)?**  
+✅ **Telemetry Data (1s WebSocket updates)**  
+```sql
+CREATE TABLE telemetry (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    drone_id VARCHAR(50),
+    time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    latitude FLOAT,
+    longitude FLOAT,
+    altitude FLOAT,
+    speed FLOAT,
+    battery FLOAT
+);
+```
+
+✅ **Waypoints for Mission Planner**  
+```sql
+CREATE TABLE waypoints (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    mission_id VARCHAR(50),
+    drone_id VARCHAR(50),
+    latitude FLOAT,
+    longitude FLOAT,
+    altitude FLOAT,
+    order_index INT,
+    reached BOOLEAN DEFAULT FALSE
+);
+```
+
+✅ **Video Metadata (For Storing Video Information)**  
+```sql
+CREATE TABLE video_metadata (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    drone_id VARCHAR(50),
+    mission_id VARCHAR(50),
+    file_path TEXT,
+    start_time TIMESTAMP,
+    end_time TIMESTAMP,
+    resolution VARCHAR(20),
+    frame_rate INT,
+    size BIGINT
+);
+```
+
+---
+
+### **How to Sync MySQL (Local) with TimescaleDB (Cloud)?**
+Since **MySQL and TimescaleDB are different**, you need a **sync mechanism**:
+
+1️⃣ **Spring Boot Batch Job (ETL Sync)**  
+   - Use **Spring Batch or Debezium CDC** to transfer data from **MySQL → TimescaleDB** when online.  
+
+2️⃣ **Manual SQL Sync (Using Python or MySQL Events)**  
+   - Export from MySQL:
+   ```sql
+   SELECT * FROM telemetry WHERE time > NOW() - INTERVAL 1 HOUR;
+   ```
+   - Insert into TimescaleDB:
+   ```sql
+   INSERT INTO cloud_db.telemetry SELECT * FROM local_mysql.telemetry;
+   ```
+
+---
+
+### **Final Architecture**
+| **Component** | **Database** |
+|--------------|-------------|
+| **Local DB (Offline Mode)** | MySQL |
+| **Cloud DB (Online Mode)** | TimescaleDB |
+| **Telemetry & Waypoints** | Stored in MySQL, synced to TimescaleDB |
+| **Video Metadata** | Stored in MySQL (Videos stored on disk/S3) |
+
+Would you like a **Spring Boot MySQL + TimescaleDB sync example?** 🚀
