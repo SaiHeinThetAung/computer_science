@@ -178,3 +178,116 @@ Let me know if you need further refinements! 🚁🔥
   - `NAV_CONTROLLER_OUTPUT.nav_bearing` → **Target Heading**
   
 Let me know if you need further adjustments! 🚀🔥
+
+### **🚀 Explanation of Green & Black Arrows in Mission Planner**
+In **Mission Planner**, different arrow colors represent various navigation data.  
+
+1️⃣ **Green Arrow (Waypoints / Next Navigation Target)**  
+   - **Represents:** The direction to the next waypoint in the mission.  
+   - **MAVLink Source:** `MISSION_CURRENT.seq` (Current Waypoint Index)  
+   - **Value to Retrieve:**  
+     - `MISSION_ITEM.x` (Latitude)  
+     - `MISSION_ITEM.y` (Longitude)  
+     - `MISSION_ITEM.z` (Altitude)  
+   - **Use Case:** Helps in visualizing where the drone is navigating next.  
+
+2️⃣ **Black Arrow (Previous / Last Heading or Flight Path History)**  
+   - **Represents:** The drone’s previous heading direction.  
+   - **MAVLink Source:** `GLOBAL_POSITION_INT.hdg` (Heading from GPS)  
+   - **Value to Retrieve:**  
+     - `GLOBAL_POSITION_INT.lat` (Latitude)  
+     - `GLOBAL_POSITION_INT.lon` (Longitude)  
+   - **Use Case:** Shows the past trajectory or last known direction.  
+
+---
+
+### **🛠️ How to Retrieve Data in Java**
+#### **✅ Fetching the Next Waypoint (Green Arrow)**
+```java
+public class WaypointData {
+    private int waypointIndex;
+    private double latitude;
+    private double longitude;
+    private double altitude;
+
+    public WaypointData(int waypointIndex, double latitude, double longitude, double altitude) {
+        this.waypointIndex = waypointIndex;
+        this.latitude = latitude;
+        this.longitude = longitude;
+        this.altitude = altitude;
+    }
+
+    public int getWaypointIndex() { return waypointIndex; }
+    public double getLatitude() { return latitude; }
+    public double getLongitude() { return longitude; }
+    public double getAltitude() { return altitude; }
+}
+```
+#### **✅ Fetching the Previous Heading (Black Arrow)**
+```java
+public class PreviousHeadingData {
+    private double latitude;
+    private double longitude;
+    private int heading;
+
+    public PreviousHeadingData(double latitude, double longitude, int heading) {
+        this.latitude = latitude;
+        this.longitude = longitude;
+        this.heading = heading;
+    }
+
+    public double getLatitude() { return latitude; }
+    public double getLongitude() { return longitude; }
+    public int getHeading() { return heading; }
+}
+```
+
+---
+
+### **🔥 Send Data to Frontend via JSON (Spring Boot API)**
+```java
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/drone")
+public class DroneController {
+
+    @GetMapping("/waypoint")
+    public WaypointData getWaypointData() {
+        return new WaypointData(3, 37.7749, -122.4194, 100.0);  // Example Data
+    }
+
+    @GetMapping("/previousHeading")
+    public PreviousHeadingData getPreviousHeading() {
+        return new PreviousHeadingData(37.7749, -122.4194, 270); // Example Data
+    }
+}
+```
+
+---
+
+### **🔥 Fetching in Frontend (JavaScript Example)**
+```javascript
+fetch("http://your-backend-server.com/api/drone/waypoint")
+  .then(response => response.json())
+  .then(data => {
+      console.log("Next Waypoint:", data);
+  });
+
+fetch("http://your-backend-server.com/api/drone/previousHeading")
+  .then(response => response.json())
+  .then(data => {
+      console.log("Previous Heading:", data);
+  });
+```
+
+---
+
+### **🎯 Summary**
+- **Green Arrow → Next Waypoint (`MISSION_CURRENT.seq`)**
+- **Black Arrow → Previous Heading (`GLOBAL_POSITION_INT.hdg`)**
+- **Retrieve & Send to Frontend via JSON API**
+  
+Let me know if you need more! 🚀🔥
