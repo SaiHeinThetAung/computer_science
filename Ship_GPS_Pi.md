@@ -1,4 +1,4 @@
-Good question — let’s go step by step on **how you can run this GPS and heading logging system** you shared.
+
 
 ---
 
